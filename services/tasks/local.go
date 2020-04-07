@@ -209,23 +209,40 @@ func (l *local) Create(ctx context.Context, r *api.CreateTaskRequest, _ ...grpc.
 }
 
 func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOption) (*api.StartResponse, error) {
+	log.G(ctx).Warn("STARTING PROCESS")
 	t, err := l.getTask(ctx, r.ContainerID)
+	log.G(ctx).Warnf("Got task %#v", t)
+
 	if err != nil {
 		return nil, err
 	}
+	log.G(ctx).Warn("Getting process")
 	p := runtime.Process(t)
+	log.G(ctx).Warnf("Got process %#v", p)
+	log.G(ctx).Warnf("EXEC ID %#v", r.ExecID)
+
 	if r.ExecID != "" {
 		if p, err = t.Process(ctx, r.ExecID); err != nil {
 			return nil, errdefs.ToGRPC(err)
 		}
 	}
+	log.G(ctx).Warn("Starting process for real this time")
+
+	s, err := p.State(ctx)
+	log.G(ctx).Warn("State", s)
+
 	if err := p.Start(ctx); err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
+	log.G(ctx).Warn("Started")
+
 	state, err := p.State(ctx)
 	if err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
+
+	log.G(ctx).Warnf("Got pid %#v", state.Pid)
+
 	return &api.StartResponse{
 		Pid: state.Pid,
 	}, nil
@@ -275,6 +292,8 @@ func getProcessState(ctx context.Context, p runtime.Process) (*task.Process, err
 	ctx, cancel := timeout.WithContext(ctx, stateTimeout)
 	defer cancel()
 
+	log.G(ctx).Warnf("get process state%#v", p)
+
 	state, err := p.State(ctx)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -321,6 +340,7 @@ func (l *local) Get(ctx context.Context, r *api.GetRequest, _ ...grpc.CallOption
 			return nil, errdefs.ToGRPC(err)
 		}
 	}
+	log.G(ctx).Warn("GET get process state")
 	t, err := getProcessState(ctx, p)
 	if err != nil {
 		return nil, errdefs.ToGRPC(err)
@@ -344,6 +364,7 @@ func (l *local) List(ctx context.Context, r *api.ListTasksRequest, _ ...grpc.Cal
 
 func addTasks(ctx context.Context, r *api.ListTasksResponse, tasks []runtime.Task) {
 	for _, t := range tasks {
+		log.G(ctx).Warn("ADD TASK get process state")
 		tt, err := getProcessState(ctx, t)
 		if err != nil {
 			if !errdefs.IsNotFound(err) { // handle race with deletion
